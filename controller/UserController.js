@@ -3,11 +3,16 @@ const user = require ('../model/UserModel');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const env = require('dotenv').config();
+const cookie = require('cookie-parser');
 
 // register
 // login
 //current
 //&&
+
+let accessToken;
+let thisUser;
+
 const registerUser = asyncHandler( async (req, res) => {
     const {fullName, userName, email, phone, password, confirmPassword} = req.body;
     if (!fullName  || !email || !phone || !password || !confirmPassword || !userName) {
@@ -27,7 +32,7 @@ const registerUser = asyncHandler( async (req, res) => {
 
     const HashedPassword = await bcrypt.hash(password, 9);
     const HashedConfirmedPassword = await bcrypt.hash(confirmPassword, 9)
-        const bookUser = await user.create({
+        bookUser = await user.create({
             fullName: fullName,
             userName: userName,
             email: email,
@@ -46,21 +51,20 @@ const loginUser = asyncHandler( async (req, res) => {
         res.status(401);
         throw new Error ('User login failed: fill all the fields');
     }
-    const userCredential = credential.split('');
-    const at = '@';
-    let thisUser;
-    if (credential.includes(at)) {
-        thisUser = user.findOne({email: credential});
+    if (credential.includes('@')) {
+        thisUser = await user.findOne({email: credential});
+        console.log(thisUser)
     }
 
     else {
-        thisUser = user.findOne({userName: credential});
+        thisUser = await user.findOne({userName: credential});
+        console.log(thisUser)
     }
 
-    if (thisUser && bcrypt.compare(password, user.password)){
-        res.status(200).send("User logged in Successfully " + password + " " + user.email);
-        const accessToken = jwt.sign({
-            user: {
+    if (thisUser && (await bcrypt.compare(password, thisUser.password))){
+        
+        accessToken = jwt.sign({
+            users: {
                 userName: user.userName,
                 email: user.email,
                 id: user.id,
@@ -69,9 +73,11 @@ const loginUser = asyncHandler( async (req, res) => {
         },
         process.env.ACCESS_TOKEN_SECRET,
         {
-            expiresIn: '1m'
+            expiresIn: '5m'
         });
-        res.status(200).json(accessToken);
+        
+        //res.status(200).cookie("My_Token", accessToken).json({accessToken, password: password, secret: process.env.ACCESS_TOKEN_SECRET});
+        res.status(200).cookie("My_Token", accessToken).redirect("/api/books");
     }
 
     else {
@@ -81,11 +87,26 @@ const loginUser = asyncHandler( async (req, res) => {
 
 
 const currentUser = (req, res) => {
-    res.status(200).json({message: 'Current user'});
+
+    if(!accessToken) {
+        res.status(206).json({message: "Access Token not provided"});
+    }
+
+    else if (accessToken){
+        const decodedToken = jwt.verify(accessToken, process.env.ACCESS_TOKEN_SECRET);
+        res.status(200).send(thisUser);
+    }
+
+    else {
+        throw new Error ("Access Token not working properly");
+    }
 }
+
 
 const logoutUser = (req, res) => {
-    res.status(200).json({message: 'Log out'});
+    
+    accessToken = null;
+    res.status(200).clearCookie("My_Token").json({message: 'Log out'});
 }
 
-module.exports = {registerUser, loginUser, currentUser, logoutUser};
+module.exports = {registerUser, loginUser, currentUser, logoutUser, accessToken};
